@@ -1,0 +1,21 @@
+Schema::create('courses', function (Blueprint $table) {
+    $table->id();
+    $table->string('course_name');
+    $table->timestamps();
+});
+
+Schema::create('course_user', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->constrained('users');
+    $table->foreignId('course_id')->constrained('courses');
+    $table->timestamps();
+});
+
+Schema::create('feedback', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('student_id')->constrained('users');
+    $table->foreignId('lecturer_id')->constrained('users');
+    $table->foreignId('course_id')->constrained('courses');
+    $table->text('feedback_text');
+    $table->timestamps();
+});
