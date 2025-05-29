@@ -1,0 +1,11 @@
+resources/views/admin/dashboard.blade.php
+<h2>Welcome, Admin {{ $user->first_name }}</h2>
+<a href="/logout">Logout</a>
+
+resources/views/student/dashboard.blade.php
+<h2>Welcome, Student {{ $user->first_name }}</h2>
+<a href="/logout">Logout</a>
+
+resources/views/lecturer/dashboard.blade.php
+<h2>Welcome, Lecturer {{ $user->first_name }}</h2>
+<a href="/logout">Logout</a>

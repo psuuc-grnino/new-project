@@ -1,0 +1,18 @@
+ROUTE
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\AuthController;
+
+Route::get('/register', [UserController::class, 'create']);
+Route::post('/register', [UserController::class, 'store']);
+
+Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
+Route::post('/login', [AuthController::class, 'login']);
+Route::get('/logout', [AuthController::class, 'logout'])->name('logout');
+
+// After login, redirect user based on role
+Route::get('/dashboard', function () {
+    $user = session('user');
+    if (!$user) return redirect('/login');
+
+    return view($user->access_type . '.dashboard', ['user' => $user]);
+});
