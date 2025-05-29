@@ -1,0 +1,710 @@
+php artisan make:migration create_accesstypes_table
+php artisan make:migration create_courses_table
+php artisan make:migration create_feedback_table
+php artisan make:controller FeedbackController
+php artisan make:controller AdminController
+php artisan make:controller CourseController
+php artisan make:controller DashboardController
+php artisan make:controller Auth/LoginController
+php artisan make:controller Auth/RegisterController
+php artisan make:view auth/login
+php artisan make:view auth/register
+php artisan make:view dashboard/admin
+php artisan make:view dashboard/student
+php artisan make:view dashboard/lecturer
+
+___________________________________________________________________________
+
+
+// 1. Migration: create_accesstypes_table.php
+namespace Database\Migrations;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateAccesstypesTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('accesstypes', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('accesstypes');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 2. Migration: create_users_table.php
+
+namespace Database\Migrations;
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateUsersTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('first_name');
+            $table->string('last_name');
+            $table->string('username')->unique();
+            $table->string('password');
+            $table->foreignId('accesstype_id')->constrained();
+            $table->foreignId('course_id')->nullable()->constrained();
+            $table->rememberToken();
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('users');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 3. Migration: create_courses_table.php
+namespace Database\Migrations;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateCoursesTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('courses', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('courses');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 4. Migration: create_feedback_table.php
+namespace Database\Migrations;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateFeedbackTable extends Migration
+{
+    public function up()
+    {
+        Schema::create('feedback', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('student_id')->constrained('users');
+            $table->foreignId('lecturer_id')->constrained('users');
+            $table->text('message');
+            $table->timestamps();
+        });
+    }
+
+    public function down()
+    {
+        Schema::dropIfExists('feedback');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 5. Model: User.php
+
+namespace App\Models;
+
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany};
+
+class User extends Authenticatable
+{
+    use HasFactory, Notifiable;
+
+    protected $fillable = ['first_name', 'last_name', 'username', 'password', 'accesstype_id', 'course_id'];
+
+    public function accesstype(): BelongsTo {
+        return $this->belongsTo(Accesstype::class);
+    }
+
+    public function course(): BelongsTo {
+        return $this->belongsTo(Course::class);
+    }
+
+    public function feedbackGiven(): HasMany {
+        return $this->hasMany(Feedback::class, 'student_id');
+    }
+
+    public function feedbackReceived(): HasMany {
+        return $this->hasMany(Feedback::class, 'lecturer_id');
+    }
+}
+
+___________________________________________________________________________
+
+// 6. Model: Accesstype.php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Accesstype extends Model
+{
+    protected $fillable = ['name'];
+
+    public function users(): HasMany {
+        return $this->hasMany(User::class);
+    }
+}
+
+___________________________________________________________________________
+
+
+// 7. Model: Course.php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Course extends Model
+{
+    protected $fillable = ['name'];
+
+    public function users(): HasMany {
+        return $this->hasMany(User::class);
+    }
+}
+
+___________________________________________________________________________
+
+
+// 8. Model: Feedback.php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Feedback extends Model
+{
+    protected $fillable = ['student_id', 'lecturer_id', 'message'];
+
+    public function student(): BelongsTo {
+        return $this->belongsTo(User::class, 'student_id');
+    }
+
+    public function lecturer(): BelongsTo {
+        return $this->belongsTo(User::class, 'lecturer_id');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 9. Controller: FeedbackController.php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Feedback;
+
+class FeedbackController extends Controller
+{
+    public function store(Request $request) {
+        $request->validate([
+            'lecturer_id' => 'required|exists:users,id',
+            'message' => 'required|string'
+        ]);
+
+        Feedback::create([
+            'student_id' => auth()->id(),
+            'lecturer_id' => $request->lecturer_id,
+            'message' => $request->message,
+        ]);
+
+        return back()->with('success', 'Feedback submitted.');
+    }
+
+    public function studentFeedbacks()
+{
+    $user = auth()->user();
+    $feedbacks = $user->feedbackGiven()->with('lecturer')->get();
+
+    $lecturers = User::where('accesstype_id', AccessType::where('name', 'lecturer')->first()->id)
+                    ->where('course_id', $user->course_id)
+                    ->get();
+
+    return view('student.feedbacks', compact('feedbacks', 'lecturers'));
+}
+
+
+    public function lecturerFeedbacks()
+{
+    $user = auth()->user();
+    $feedbacks = $user->feedbackReceived()->with('student')->get();
+    $course = $user->course;
+
+    return view('lecturer.feedbacks', compact('feedbacks', 'course'));
+}
+
+}
+
+___________________________________________________________________________
+
+
+// 10. Controller: AdminController.php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Course;
+use App\Models\Feedback;
+
+class AdminController extends Controller
+{
+    public function addCourse(Request $request) {
+        $request->validate(['name' => 'required|string']);
+        Course::create(['name' => $request->name]);
+        return back()->with('success', 'Course created.');
+    }
+
+    public function allFeedbacks() {
+        return Feedback::with(['student', 'lecturer'])->get();
+    }
+
+    public function viewCourses()
+{
+    $courses = Course::all();
+    $feedbacks = Feedback::with(['student', 'lecturer'])->get();
+
+    return view('admin.courses', compact('courses', 'feedbacks'));
+}
+
+}
+
+
+___________________________________________________________________________
+
+
+
+// 11. Controller: CourseController.php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class CourseController extends Controller
+{
+    public function enroll(Request $request) {
+        $request->validate(['course_id' => 'required|exists:courses,id']);
+        $user = auth()->user();
+        $user->course_id = $request->course_id;
+        $user->save();
+        return back()->with('success', 'Enrolled in course.');
+    }
+}
+
+___________________________________________________________________________
+
+
+
+// 12. Routes (web.php)
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\CourseController;
+use App\Http\Controllers\FeedbackController;
+
+// Public routes
+Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
+Route::post('/login', [LoginController::class, 'login']);
+Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+
+Route::get('/register', [RegisterController::class, 'showRegistrationForm'])->name('register');
+Route::post('/register', [RegisterController::class, 'register']);
+
+Route::get('/dashboard', [DashboardController::class, 'show'])->middleware('auth')->name('dashboard');
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/admin/course', [AdminController::class, 'addCourse']);
+
+    Route::post('/course/enroll', [CourseController::class, 'enroll']);
+
+    Route::post('/feedback', [FeedbackController::class, 'store']);
+});
+
+
+___________________________________________________________________________
+
+
+
+// 13. Seeder (DatabaseSeeder.php)
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\Accesstype;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $roles = ['admin', 'lecturer', 'student'];
+
+    foreach ($roles as $role) {
+        Accesstype::firstOrCreate(['name' => $role]);
+    	}
+    }
+}
+
+___________________________________________________________________________
+
+
+
+// 14. Controller: Auth/LoginController
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class LoginController extends Controller
+{
+    public function showLoginForm()
+    {
+        return view('auth.login');
+    }
+
+    public function login(Request $request)
+    {
+        $credentials = $request->only('username', 'password');
+
+        if (Auth::attempt($credentials)) {
+            return redirect()->route('dashboard');
+        }
+
+        return back()->withErrors([
+            'username' => 'Invalid credentials.',
+        ]);
+    }
+
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        return redirect()->route('login');
+    }
+}
+
+___________________________________________________________________________
+
+
+// 15. Controller: Auth/RegisterController
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Models\Accesstype;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+
+class RegisterController extends Controller
+{
+    public function showRegistrationForm()
+    {
+        $accessTypes = Accesstype::all();
+        return view('auth.register', compact('accessTypes'));
+    }
+
+    public function register(Request $request)
+    {
+        $request->validate([
+            'first_name' => 'required|string',
+            'last_name' => 'required|string',
+            'username' => 'required|string|unique:users,username',
+            'password' => 'required|string|confirmed',
+            'accesstype_id' => 'required|exists:accesstypes,id',
+        ]);
+
+        User::create([
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'username' => $request->username,
+            'password' => Hash::make($request->password),
+            'accesstype_id' => $request->accesstype_id,
+        ]);
+
+        return redirect()->route('login');
+    }
+}
+
+___________________________________________________________________________
+
+// 16. Controller: DashboardController
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Course;
+use App\Models\Feedback;
+use App\Models\User;
+use App\Models\Accesstype;
+
+class DashboardController extends Controller
+{
+    public function show()
+    {
+        $user = auth()->user();
+        $role = $user->accesstype->name;
+
+        switch ($role) {
+            case 'admin':
+                $courses = Course::all();
+                $feedbacks = Feedback::with(['student', 'lecturer'])->get();
+                return view('dashboard.admin', compact('courses', 'feedbacks'));
+
+            case 'student':
+                $course = $user->course;
+                $lecturers = User::where('accesstype_id', Accesstype::where('name', 'lecturer')->first()->id)
+                                ->where('course_id', $user->course_id)
+                                ->get();
+                $feedbacks = $user->feedbackGiven()->with('lecturer')->get();
+                return view('dashboard.student', compact('course', 'lecturers', 'feedbacks'));
+
+            case 'lecturer':
+                $course = $user->course;
+                $feedbacks = $user->feedbackReceived()->with('student')->get();
+                return view('dashboard.lecturer', compact('course', 'feedbacks'));
+
+            default:
+                abort(403);
+        }
+    }
+}
+
+___________________________________________________________________________
+
+
+17. View: auth/register.blade.php
+
+@if($errors->any())
+    <div class="error">
+        <strong>Please fix the following errors:</strong>
+        <ul>
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+
+<form method="POST" action="{{ route('register') }}" novalidate>
+    @csrf
+    <input type="text" name="first_name" placeholder="First Name" value="{{ old('first_name') }}">
+    @error('first_name') <span class="error">{{ $message }}</span> @enderror
+
+    <input type="text" name="last_name" placeholder="Last Name" value="{{ old('last_name') }}">
+    @error('last_name') <span class="error">{{ $message }}</span> @enderror
+
+    <input type="text" name="username" placeholder="Username" value="{{ old('username') }}">
+    @error('username') <span class="error">{{ $message }}</span> @enderror
+
+    <input type="password" name="password" placeholder="Password">
+    @error('password') <span class="error">{{ $message }}</span> @enderror
+
+    <input type="password" name="password_confirmation" placeholder="Confirm Password">
+
+    <select name="accesstype_id">
+        <option value="" disabled {{ old('accesstype_id') ? '' : 'selected' }}>Select Role</option>
+        @foreach($accessTypes as $access)
+            <option value="{{ $access->id }}" {{ old('accesstype_id') == $access->id ? 'selected' : '' }}>{{ ucfirst($access->name) }}</option>
+        @endforeach
+    </select>
+    @error('accesstype_id') <span class="error">{{ $message }}</span> @enderror
+
+    <button type="submit">Register</button>
+</form>
+
+
+___________________________________________________________________________
+
+
+// 18. View: auth/login.blade.php
+
+@if($errors->any())
+    <div class="error">
+        <strong>Login failed:</strong>
+        <ul>
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+
+<form method="POST" action="{{ route('login') }}" novalidate>
+    @csrf
+    <input type="text" name="username" placeholder="Username" value="{{ old('username') }}">
+    @error('username') <span class="error">{{ $message }}</span> @enderror
+
+    <input type="password" name="password" placeholder="Password">
+    @error('password') <span class="error">{{ $message }}</span> @enderror
+
+    <button type="submit">Login</button>
+</form>
+
+<p>Don't have an account? <a href="{{ route('register') }}">Sign up here</a></p>
+
+
+
+___________________________________________________________________________
+
+// 19. View: dashboard/admin.blade.php
+
+<h1>Admin Dashboard</h1>
+
+<h2>Add Course</h2>
+<form method="POST" action="/admin/course">
+    @csrf
+    <input type="text" name="name" placeholder="Course Name" required>
+    <button type="submit">Add</button>
+</form>
+
+<h2>All Courses</h2>
+<ul>
+@forelse ($courses as $course)
+    <li>{{ $course->name }}</li>
+@empty
+    <li>No courses found.</li>
+@endforelse
+</ul>
+
+<h2>All Feedbacks</h2>
+@foreach ($feedbacks as $fb)
+    <p><strong>{{ $fb->student->username }}</strong> → <strong>{{ $fb->lecturer->username }}</strong>: {{ $fb->message }}</p>
+@endforeach
+
+<form method="POST" action="{{ route('logout') }}">
+    @csrf
+    <button type="submit">Logout</button>
+</form>
+
+___________________________________________________________________________
+
+
+// 20. View: dashboard/student.blade.php
+
+<h1>Student Dashboard</h1>
+
+<h2>Enroll in a Course</h2>
+<form method="POST" action="/course/enroll">
+    @csrf
+    <select name="course_id" required>
+        @foreach (\App\Models\Course::all() as $course)
+            <option value="{{ $course->id }}">{{ $course->name }}</option>
+        @endforeach
+    </select>
+    <button type="submit">Enroll</button>
+</form>
+
+
+<h2>My Course</h2>
+<p>{{ auth()->user()->course->name ?? 'Not enrolled yet' }}</p>
+
+<h2>Submit Feedback</h2>
+<form method="POST" action="/feedback">
+    @csrf
+    <select name="lecturer_id" required>
+        @foreach ($lecturers as $lecturer)
+            <option value="{{ $lecturer->id }}">{{ $lecturer->username }}</option>
+        @endforeach
+    </select>
+    <textarea name="message" placeholder="Enter your feedback" required></textarea>
+    <button type="submit">Submit</button>
+</form>
+
+<h2>My Feedbacks</h2>
+@foreach ($feedbacks as $fb)
+    <p><strong>To {{ $fb->lecturer->username }}</strong>: {{ $fb->message }}</p>
+@endforeach
+
+
+<form method="POST" action="{{ route('logout') }}">
+    @csrf
+    <button type="submit">Logout</button>
+</form>
+
+
+___________________________________________________________________________
+
+// 21. View: dashboard/lecturer.blade.php
+
+
+
+@if (!auth()->user()->course)
+    <h2>Enroll in a Course</h2>
+    <form method="POST" action="/course/enroll">
+        @csrf
+        <select name="course_id" required>
+            @foreach (\App\Models\Course::all() as $course)
+                <option value="{{ $course->id }}">{{ $course->name }}</option>
+            @endforeach
+        </select>
+        <button type="submit">Enroll</button>
+    </form>
+@else
+    <h2>Assigned Course</h2>
+    <p>{{ auth()->user()->course->name }}</p>
+@endif
+
+<h2>Feedbacks from Students</h2>
+@foreach ($feedbacks as $fb)
+    <p><strong>{{ $fb->student->username }}</strong>: {{ $fb->message }}</p>
+@endforeach
+
+<form method="POST" action="{{ route('logout') }}">
+    @csrf
+    <button type="submit">Logout</button>
+</form>
+
+___________________________________________________________________________
+
+___________________________________________________________________________
+
+___________________________________________________________________________
+
+___________________________________________________________________________
+
+
+
+
+take note: ganto dapat pagkakasunod ng migrations
+accesstypes
+courses
+users
+feedback
+
+php artisan migrate
+php artisan db:seed
